@@ -11,7 +11,7 @@ operation approval and approval-management) to test with cypress the use of the 
 run app in development mode.
 
 
-## backend
+## backend in /server
 ### `yarn start` or `yarn dev` (nodemon)
 
 ## Learn More
