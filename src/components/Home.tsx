@@ -1,6 +1,5 @@
 import React from 'react';
 import {useNavigate} from "react-router-dom";
-import {elements} from "../App";
 import Login from "./Login";
 
 export const btnStyle = {
@@ -28,19 +27,17 @@ const Home = () => {
                 justifyContent: 'center',
                 alignItems: 'center',
             }}>
-                {elements?.map(({name, key}) => (
-                    <div key={key}>
+                    <div >
 
                         <button
                             style={btnStyle}
                             onClick={() => {
-                                nav(`/${key}`);
+                                nav(`/embed`);
                             }}
                         >
-                            {name}
+                           GO TO EMBED
                         </button>
                     </div>
-                ))}
 
 
             </div>

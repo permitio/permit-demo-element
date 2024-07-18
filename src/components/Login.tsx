@@ -4,8 +4,8 @@ import {btnStyle} from "./Home";
 
 const Login = () => {
     const [isLogin, setIsLogin] = useState(false);
-    const tenantKey = process.env.REACT_APP_TENANT_KEY|| 'default';
-    const backendUrl = process.env.REACT_APP_BACKEND_URL|| `http://localhost:8080/login_cookie`
+    const tenantKey =  'default';
+    const backendUrl =  `http://localhost:8080/login_cookie`
 
     const login = () => {
         permit.elements
