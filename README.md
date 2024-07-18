@@ -5,18 +5,13 @@ This project was bootstrapped with [Create React App](https://github.com/faceboo
 This project is a simple react app that uses the [Permit Elements]( user-management, audit log, access request,
 operation approval and approval-management) to test with cypress the use of the Permit Elements.
 
-## Run Cypress Test Scripts
-
-### `yarn cyo`
-
+## frontend
 ### `yarn start`
 
 run app in development mode.
 
+
+## backend
+### `yarn start` or `yarn dev` (nodemon)
+
 ## Learn More
-
-Add file .env in root folder with content:
-
-```
-REACT_APP_TENANT_KEY=default
-```
