@@ -14,4 +14,7 @@ run app in development mode.
 ## backend in /server
 ### `yarn start` or `yarn dev` (nodemon)
 
-## Learn More
+## ENV VARS
+replace .example.env - > .env
+Don't forget to put your details there
+
