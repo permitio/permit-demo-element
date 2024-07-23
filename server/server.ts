@@ -3,7 +3,7 @@ const {Permit} = require("permitio");
 const express = require("express");
 
 const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
+require('dotenv').config({ path: path.resolve(__dirname, '../.example.env') });
 
 
 
@@ -13,7 +13,7 @@ const port = 8080;
 
 const PERMIT_KEY_SECRET = process.env.PERMIT_KEY_SECRET;
 const USER_KEY = process.env.USER_KEY;
-const TENANT_ID = process.env.REACT_APP_TENANT_KEY;
+const TENANT_ID = process.env.TENANT_KEY;
 
 
 const permit = new Permit(
