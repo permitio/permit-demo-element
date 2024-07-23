@@ -27,6 +27,6 @@ To get the embedded iframe, you need to go to the Permit Elements page and get t
 ![add iframe](public/iframe.png)
 
 
-Then, put the code in the `src/components/EmbedElement.tsx` file in the relevant place.
+Then, place the code in the `src/components/EmbedElement.tsx` file in the relevant place.
 
 
