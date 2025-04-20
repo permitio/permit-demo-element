@@ -28,7 +28,6 @@ export default function UserManagementPage() {
   const [tenantId] = useState<string>(PERMIT_TENANT_ID);
   const [userEmail] = useState<string>(DEFAULT_USER_EMAIL);
   const [userJwt, setUserJwt] = useState<string>(USER_JWT || "");
-  const [credentialsSubmitted, setCredentialsSubmitted] = useState(false);
   const [isGeneratingJwt, setIsGeneratingJwt] = useState(false);
   const [jwks] = useState<JWKS | null>(JWKS_JSON ? JSON.parse(JWKS_JSON) : null);
   const [isDarkMode, setIsDarkMode] = useState(false);

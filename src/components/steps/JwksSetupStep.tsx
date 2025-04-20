@@ -1,8 +1,7 @@
-import React, { useState, useEffect } from "react";
-import Image from 'next/image';
+import React, { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { JWKS } from "@/utils/jwt";
-import { ExternalLink, Copy, Check, CheckCircle, KeyRound, Shield } from "lucide-react";
+import { ExternalLink, Copy, Check, CheckCircle, KeyRound} from "lucide-react";
 import { parseJWT } from "@/utils/client-jwt";
 
 interface JWKSSetupStepProps {
