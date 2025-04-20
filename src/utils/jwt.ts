@@ -64,20 +64,6 @@ export async function generateJWT(user: string, tenant: string, envId: string, k
 }
 
 /**
- * Interface for JWKS response
- */
-export interface JWKS {
-  keys: {
-    kty: string;
-    kid: string;
-    use: string;
-    alg: string;
-    n: string;
-    e: string;
-  }[];
-}
-
-/**
  * Parse and extract information from a JWT token
  * @param token JWT token string
  * @returns Decoded payload and header
