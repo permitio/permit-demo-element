@@ -1,179 +1,238 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { ClipboardList, FileCheck, Users } from "lucide-react";
-import { motion } from "framer-motion";
+import React, { useEffect, useRef, useState, useCallback } from "react";
+import { useAuth0 } from "@auth0/auth0-react";
+import { Button } from "@/components/ui/button";
 
-import { AuthenticationStep } from "@/components/steps/AuthenticationStep";
-import { ImplementationStep } from "@/components/steps/ImplementationStep";
-import { JwksSetupStep } from "@/components/steps/JwksSetupStep";
-import NavigationTabs from "@/components/navigation-tabs";
-import { PreviewStep } from "@/components/steps/PreviewStep";
-import {
-  DEFAULT_USER_EMAIL,
-  JWKS_JSON,
-  PERMIT_ENV_ID,
-  PERMIT_TENANT_ID,
-  USER_JWT,
-  USER_MANAGEMENT_EMBED_URL,
-  getEmbedUrlWithDarkMode
-} from "@/utils/env";
-import { fetchJWT } from "@/utils/client-jwt";
-import { JWKS } from "@/utils/jwt";
+const ENV_ID = process.env.NEXT_PUBLIC_PERMIT_ENV_ID || "";
+const TENANT_ID = process.env.NEXT_PUBLIC_PERMIT_TENANT_ID || "default";
+const PERMIT_API_URL =
+  process.env.NEXT_PUBLIC_PERMIT_API_URL || "https://api.permit.io";
+const EMBED_URL = process.env.NEXT_PUBLIC_USER_MANAGEMENT_EMBED_URL || "";
 
 export default function UserManagementPage() {
-  // State for Permit.io credentials
-  const [embedUrl, setEmbedUrl] = useState<string>(USER_MANAGEMENT_EMBED_URL);
-  const [environmentId] = useState<string>(PERMIT_ENV_ID);
-  const [tenantId] = useState<string>(PERMIT_TENANT_ID);
-  const [userEmail] = useState<string>(DEFAULT_USER_EMAIL);
-  const [userJwt, setUserJwt] = useState<string>(USER_JWT || "");
-  const [isGeneratingJwt, setIsGeneratingJwt] = useState(false);
-  const [jwks] = useState<JWKS | null>(JWKS_JSON ? JSON.parse(JWKS_JSON) : null);
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const { loginWithRedirect, isAuthenticated, isLoading, getIdTokenClaims, user } = useAuth0();
+  const [error, setError] = useState<string | null>(null);
+  const [loggingIn, setLoggingIn] = useState(false);
+  const [permitToken, setPermitToken] = useState<string | null>(null);
+  const [elementReady, setElementReady] = useState(false);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  // Detect dark mode and update URL
-  useEffect(() => {
-    const updateDarkMode = () => {
-      const darkModeActive = document.documentElement.classList.contains('dark') || 
-                         window.matchMedia('(prefers-color-scheme: dark)').matches;
-      setIsDarkMode(darkModeActive);
-    };
+  // Step A: Call elements_fe_login_as to get the permit token
+  const loginToPermit = useCallback(async () => {
+    if (loggingIn || permitToken) return;
+    setLoggingIn(true);
+    setError(null);
 
-    // Set initial state
-    updateDarkMode();
-
-    // Listen for changes
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    const handleChange = () => updateDarkMode();
-    mediaQuery.addEventListener('change', handleChange);
-
-    // Observer for class changes on document element
-    const observer = new MutationObserver(updateDarkMode);
-    observer.observe(document.documentElement, { 
-      attributes: true, 
-      attributeFilter: ['class'] 
-    });
-
-    return () => {
-      mediaQuery.removeEventListener('change', handleChange);
-      observer.disconnect();
-    };
-  }, []);
-
-  // Update embed URL when dark mode changes
-  useEffect(() => {
     try {
-      const url = getEmbedUrlWithDarkMode(USER_MANAGEMENT_EMBED_URL, isDarkMode);
-      setEmbedUrl(url);
-    } catch (error) {
-      console.error('Error updating embed URL:', error);
-    }
-  }, [isDarkMode]);
+      const claims = await getIdTokenClaims();
+      if (!claims?.__raw) {
+        throw new Error("Could not get ID token from Auth0");
+      }
+      const idToken = claims.__raw;
 
-  
-  // Generate JWT on initial render if not already available
+      console.log("Auth0 ID token sub:", claims.sub);
+      console.log("Calling elements_fe_login_as on:", PERMIT_API_URL);
+
+      const response = await fetch(
+        `${PERMIT_API_URL}/v2/auth/${ENV_ID}/elements_fe_login_as`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            tenant_id: TENANT_ID,
+            user_jwt: idToken,
+            user_key_claim: "email",
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(
+          errorData.message || errorData.error || `HTTP ${response.status}`
+        );
+      }
+
+      const data = await response.json();
+      console.log("elements_fe_login_as response:", data);
+
+      if (data.error) {
+        throw new Error(`${data.error} (${data.extra || ""})`);
+      }
+
+      const token = data.element_bearer_token;
+      if (!token) {
+        throw new Error("No element_bearer_token in login response");
+      }
+
+      console.log("Got permit token, will send to iframe via postMessage");
+      setPermitToken(token);
+    } catch (err) {
+      console.error("Permit login error:", err);
+      setError(String(err));
+    } finally {
+      setLoggingIn(false);
+    }
+  }, [getIdTokenClaims, loggingIn, permitToken]);
+
+  // Auto-login to Permit once Auth0 is authenticated
   useEffect(() => {
-    const generateToken = async () => {
-      if (USER_JWT) return;
-      
-      try {
-        const token = await fetchJWT(userEmail, tenantId, environmentId);
-        setUserJwt(token);
-      } catch (error) {
-        console.error('Error generating JWT:', error);
+    if (isAuthenticated && !permitToken && !loggingIn) {
+      loginToPermit();
+    }
+  }, [isAuthenticated, permitToken, loggingIn, loginToPermit]);
+
+  // Step B: Once iframe loads AND we have the token, send it via postMessage
+  useEffect(() => {
+    if (!permitToken || !iframeRef.current) return;
+
+    const iframe = iframeRef.current;
+
+    const sendToken = () => {
+      const iframeWindow = iframe.contentWindow;
+      if (!iframeWindow) return;
+      console.log("Sending permit token to iframe via postMessage");
+      iframeWindow.postMessage(
+        { type: "permitToken", permitToken: permitToken },
+        "*"
+      );
+    };
+
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === "permitTokenReceived") {
+        console.log("iframe acknowledged token receipt!");
+        setElementReady(true);
       }
     };
+    window.addEventListener("message", handleMessage);
 
-    if (userEmail && tenantId && environmentId) {
-      generateToken();
-    }
-  }, [userEmail, tenantId, environmentId]);
+    let attempts = 0;
+    const maxAttempts = 60;
+    const interval = setInterval(() => {
+      if (elementReady || attempts >= maxAttempts) {
+        clearInterval(interval);
+        if (attempts >= maxAttempts && !elementReady) {
+          console.error("iframe never acknowledged the token");
+        }
+        return;
+      }
+      sendToken();
+      attempts++;
+    }, 500);
 
-  // Define tabs for navigation
-  const tabs = [
-    {
-      name: "User Management",
-      href: "/user-management",
-      icon: <Users className="h-4 w-4" />,
-    },
-    {
-      name: "Audit Logs",
-      href: "/audit-logs",
-      icon: <ClipboardList className="h-4 w-4" />,
-    },
-    {
-      name: "Approval Flows",
-      href: "/approval-flows",
-      icon: <FileCheck className="h-4 w-4" />,
-    },
-  ];
+    iframe.addEventListener("load", sendToken);
 
-  const handleCredentialsSubmit = async () => {
-    try {
-      setIsGeneratingJwt(true);
-      const jwt = await fetchJWT(userEmail, tenantId, environmentId);
-      setUserJwt(jwt);
-    } catch (error) {
-      console.error("Error generating JWT:", error);
-    } finally {
-      setIsGeneratingJwt(false);
-    }
-  };
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("message", handleMessage);
+      iframe.removeEventListener("load", sendToken);
+    };
+  }, [permitToken, elementReady]);
+
+  // Build iframe URL with elementsToken flag so the embed app waits for postMessage
+  const iframeUrl = EMBED_URL
+    ? (() => {
+        const url = new URL(EMBED_URL);
+        if (!url.searchParams.has("envId")) url.searchParams.set("envId", ENV_ID);
+        url.searchParams.set("elementsToken", "true");
+        return url.toString();
+      })()
+    : "";
+
+  if (isLoading) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <p className="text-muted-foreground">Loading...</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="container py-10">
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-      >
-        <div className="mx-auto max-w-4xl">
-          <div className="mb-6">
-            <h1 className="mb-2 text-3xl font-bold">User Management</h1>
-            <p className="text-muted-foreground">
-              Allow your users to manage access control and permissions within safe boundaries.
+    <div className="container max-w-4xl py-10">
+      <h1 className="mb-2 text-3xl font-bold">User Management Element Test</h1>
+      <p className="mb-6 text-muted-foreground">
+        Testing the embedded User Management element with Auth0 staging authentication.
+      </p>
+
+      {/* Step 1: Auth0 Login */}
+      {!isAuthenticated && (
+        <div className="mb-6 rounded-lg border p-6 text-center">
+          <h2 className="mb-2 text-lg font-semibold">Step 1: Login with Auth0</h2>
+          <p className="mb-4 text-sm text-muted-foreground">
+            You need to log in first so we can get your Auth0 ID token.
+          </p>
+          <Button onClick={() => loginWithRedirect()} size="lg">
+            Login with Auth0
+          </Button>
+        </div>
+      )}
+
+      {/* Step 2: Permit login status */}
+      {isAuthenticated && !permitToken && (
+        <div className="mb-6 rounded-lg border p-6 text-center">
+          <h2 className="mb-2 text-lg font-semibold">Step 2: Connecting to Permit</h2>
+          {loggingIn && (
+            <p className="text-sm text-muted-foreground">
+              Logging in as <strong>{user?.email}</strong> (sub: {user?.sub})...
+            </p>
+          )}
+          {error && (
+            <div className="mt-4">
+              <p className="mb-2 text-sm text-red-500">Error: {error}</p>
+              <Button onClick={loginToPermit} variant="outline">
+                Retry
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Step 3: The actual element */}
+      {permitToken && iframeUrl && (
+        <div className="rounded-lg border">
+          <div className="border-b p-4">
+            <h2 className="text-lg font-semibold">User Management Element</h2>
+            <p className="text-sm text-muted-foreground">
+              Logged in as {user?.email} | Tenant: {TENANT_ID}
+              {!elementReady && " | Sending token to iframe..."}
+              {elementReady && " | Connected"}
             </p>
           </div>
-
-          <NavigationTabs tabs={tabs} className="mb-6" />
-
-          {/* Step 1: JWKS Setup */}
-          <JwksSetupStep
-            stepNumber={1}
-            jwks={jwks}
-            userJwt={userJwt}
-          />
-
-          {/* Step 2: Implementation */}
-          <ImplementationStep
-            stepNumber={2}
-            tenantId={tenantId}
-            environmentId={environmentId}
-            embedUrl={embedUrl}
-          />
-
-          {/* Step 3: Login */}
-          <AuthenticationStep 
-            stepNumber={3}
-            isGeneratingJwt={isGeneratingJwt}
-            onConnect={handleCredentialsSubmit}
-            description="Connect to enable user management functionality"
-          />
-
-          {/* Step 4: Preview */}
-          <PreviewStep
-            stepNumber={4}
+          <iframe
+            ref={iframeRef}
+            src={iframeUrl}
+            className="w-full"
+            style={{ height: "600px", border: "none" }}
             title="User Management Element"
-            elementId="user-management"
-            description="Manage users, roles, and permissions directly from this embedded interface."
-            embedUrl={embedUrl}
-            envId={environmentId}
-            tenantId={tenantId}
-            userToken={userJwt}
+            allow="clipboard-write"
           />
         </div>
-      </motion.div>
+      )}
+
+      {/* Debug info */}
+      <details className="mt-8">
+        <summary className="cursor-pointer text-sm text-muted-foreground">
+          Debug Info
+        </summary>
+        <pre className="mt-2 overflow-auto rounded bg-gray-100 p-4 text-xs dark:bg-gray-900">
+          {JSON.stringify(
+            {
+              auth0Authenticated: isAuthenticated,
+              userEmail: user?.email,
+              userSub: user?.sub,
+              permitTokenReceived: !!permitToken,
+              iframeAcknowledged: elementReady,
+              envId: ENV_ID,
+              tenantId: TENANT_ID,
+              permitApiUrl: PERMIT_API_URL,
+              embedUrl: EMBED_URL,
+            },
+            null,
+            2
+          )}
+        </pre>
+      </details>
     </div>
   );
-} 
+}
